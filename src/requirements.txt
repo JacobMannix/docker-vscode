@@ -3,4 +3,4 @@ requests
 bs4
 pandas
 tweepy
-# python-dotenv
+python-dotenv

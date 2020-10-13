@@ -9,34 +9,33 @@ from datetime import datetime
 import re
 import tweepy
 import time
-import sys, os
-
-# Changing path to parent path
-currentdir = os.path.dirname(os.path.realpath(__file__))
-parentdir = os.path.dirname(currentdir) # getting parent directory for envpath
-sys.path.append(parentdir) # changing path for local modules
+import sys
+import os
+# import dotenv
 
 # Local Modules from parent directory
-from modules import webhooks, tweepyThread
+from webhooks import webhookMessage
+from tweepyThread import tweepyThread
+from staffordFile import staffordFile
 
-# Change Working Directory
-abspath = os.path.abspath(__file__) # absolute path of file
-dname = os.path.dirname(abspath) # directory name
-os.chdir(dname) # change directory
+#-----
+# FILEPATH OF APP (specified in dockerfile)
+src_path = "/app"
+#-----
 
-# Load Environment Variables - from env.env file
-envpath = parentdir + "/env.env" # Set directory of env.env file
-from dotenv import load_dotenv
-load_dotenv(dotenv_path = envpath)
+# Function to find mounted secrets files
+def get_secret(secret_name):
+    with open(src_path + "/secrets/" + secret_name, 'r') as secret_file:
+        return secret_file.read()
 
-# Environment Variables - change in '.env' file
-ckey = os.getenv("API_KEY_TC")
-csecret = os.getenv("API_SECRET_TC")
-atoken = os.getenv("API_ACCESS_TOKEN_TC")
-asecret = os.getenv("API_ACCESS_SECRET_TC")
-twitterUser = os.getenv("TWITTER_ACCOUNT_TC")
-webhook_url = os.getenv("WEBHOOK_DISCORD_S1")
-archiveURL = os.getenv("WEBSITE_STAFFORD_SK")
+# Variables from mounted secrets volume (handled by kubernetes)
+ckey = get_secret("API_KEY")
+csecret = get_secret("API_SECRET")
+atoken = get_secret("API_ACCESS_TOKEN")
+asecret = get_secret("API_ACCESS_SECRET")
+twitterUser = get_secret("TWITTER_ACCOUNT")
+webhook_url = get_secret("WEBHOOK_DISCORD")
+archiveURL = get_secret("ARCHIVE_WEBSITE")
 
 # Race Results function
 def staffordResults(archiveURL):
@@ -80,7 +79,6 @@ def staffordResults(archiveURL):
     dfDiscord = dfDiscord.replace('Driver', '')
     
     # Creates list for sectioning off drivers to limit 6 drivers per message
-    # sections = [[0,5], [5,10], [10, 15], [15,20], [20,25], [25, 30], [30, 35]] # showing 5 drivers per tweet
     sections = [[0,5]] # only showing top 5 drivers
     num_sections = int(len(df) / 5) + (len(df)  % 5 > 0) # Divides the number of drivers by 5 (5 per tweet) and rounds up
     list_dfString = []
@@ -93,35 +91,18 @@ def staffordResults(archiveURL):
         dfString = dfString.replace(')', ') ')
         dfString = dfString.replace('Driver', '')
         
-        # Originally made this to tweet all results in a thread of tweets but after testing works best for me...
-        # to tweet once with top 5 results along with link to rest of results
-        # Uncomment remaining of if statement and pass in a list to tweet in a thread
-        if len(dfString) > 0:
-            if i == 0:
-                list_dfString.append(title + "\n" + dfString + "\n" + " "  + "\n" + resultsHTML['href'])
-            # elif i <= 5:
-                # list_dfString.append(dfString)
-            # else:
-                # list_dfString.append(dfString + "\n" + resultsHTML['href'])
+        list_dfString.append(title + "\n" + dfString + "\n" + " "  + "\n" + resultsHTML['href'])
     
-    # Open title of most recently posted race
-    postTitle = []
-
-    with open('postTitle.txt', 'r') as file:
-        for line in file:
-            postTitle.append(str(line))
-    postTitle = postTitle[0] # this may throw an error if nothing is in 'postTitle.txt'
-    
-    # Using Regex to extract the race date from the 'resultsHTML' webpage
-    # date = re.search(r"\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|(Nov|Dec)(?:ember)?)\D?(\d{1,2}\D?)?\D?((19[7-9]\d|20\d{2})|\d{2})", resultsHTML.string)
-    # raceDate = datetime.strptime(date.group(0), "%B %d, %Y").strftime("%B %d, %Y") #[0]
+    # Filepath of persistent data
+    post_filepath = src_path + '/data/postTitle.txt'
+    postTitle = staffordFile(post_filepath)
 
     # Checks if raceDate
     if title != postTitle:
         print(list_dfString)
 
-        # Send race results in tweet thread
-        tweepyThread(twitterUser, list_dfString) # creates a tweet, takes a list
+        # Send race results in tweet
+        # tweepyThread(twitterUser, list_dfString, ckey, csecret, atoken, asecret) # creates a tweet, takes a list
 
         # Send race results to discord -- Optional if you want to send results through webhook
         message_content = title + "\n" + dfDiscord
@@ -132,7 +113,7 @@ def staffordResults(archiveURL):
         # webhookMessage(webhook_url, 'no new race results')
 
     # Save title to file
-    with open("postTitle.txt", "w") as output:
+    with open(post_filepath, "w") as output:
         output.write(str(title.rstrip()))
     
 # Calling Function
